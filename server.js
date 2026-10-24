@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const os = require('os');
@@ -58,10 +59,57 @@ const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 16 * 1024 });
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
+// 카톡 등 메신저는 스크립트를 실행하지 않고 HTML의 미리보기 태그만 읽으므로, 서버에서 넣어준다.
+const INDEX_TEMPLATE = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+const DEFAULT_PREVIEW = {
+  title: '놀게더 - 링크 하나로 다 같이 하는 파티게임',
+  description: '초성 배틀, 라이어 게임, 밸런스 게임, 텔레파시, 우리 얼마나 알까. 앱 설치 없이 링크로 바로 시작해요.',
+};
+
+function escapeAttr(text) {
+  return String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+function previewFor(reqPath, code) {
+  const room = code && rooms.get(code);
+  const host = room && room.players.find(p => p.id === room.hostId && !p.left);
+  if (!host) return { ...DEFAULT_PREVIEW, url: `${PUBLIC_URL}${reqPath}` };
+  return {
+    title: `${host.name}님이 놀게더에 초대했어요`,
+    description: `방 코드 ${code} · 링크를 누르면 설치 없이 바로 참여해요. 지금 함께 놀아요!`,
+    url: `${PUBLIC_URL}${reqPath}`,
+  };
+}
+
+function renderIndex(req, res) {
+  const code = /^\d{4}$/.test(req.params.code || '') ? req.params.code : null;
+  const p = previewFor(code ? `/r/${code}` : '/', code);
+  const image = `${PUBLIC_URL}/og-image.png`;
+  const tags = [
+    ['property', 'og:type', 'website'],
+    ['property', 'og:site_name', '놀게더'],
+    ['property', 'og:locale', 'ko_KR'],
+    ['property', 'og:title', p.title],
+    ['property', 'og:description', p.description],
+    ['property', 'og:url', p.url],
+    ['property', 'og:image', image],
+    ['property', 'og:image:width', '1200'],
+    ['property', 'og:image:height', '630'],
+    ['property', 'og:image:alt', '놀게더 - 링크 하나로 다 같이 하는 파티게임'],
+    ['name', 'description', p.description],
+    ['name', 'twitter:card', 'summary_large_image'],
+    ['name', 'twitter:title', p.title],
+    ['name', 'twitter:description', p.description],
+    ['name', 'twitter:image', image],
+  ].map(([attr, key, value]) => `<meta ${attr}="${key}" content="${escapeAttr(value)}">`).join('\n  ');
+  res.set('Cache-Control', 'no-cache');
+  res.type('html').send(INDEX_TEMPLATE.replace('<!--META-->', tags));
+}
+
 app.disable('x-powered-by');
 app.get('/healthz', (req, res) => res.json({ ok: true, rooms: rooms.size }));
-app.use(express.static(PUBLIC_DIR));
-app.get(['/r/:code', '/screen/:code'], (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
+app.get(['/', '/index.html', '/r/:code', '/screen/:code'], renderIndex);
+app.use(express.static(PUBLIC_DIR, { index: false }));
 app.get('/qr/:code.svg', async (req, res) => {
   if (!/^\d{4}$/.test(req.params.code)) return res.sendStatus(404);
   const svg = await QRCode.toString(joinUrl(req.params.code), {

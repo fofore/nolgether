@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <!-- 링크 미리보기 이미지(1200x630). npm run brand 로 public/og-image.png 를 다시 만든다. -->
+  <link href="https://fonts.googleapis.com/css2?family=Jua&display=block" rel="stylesheet">
+  <style>
+    html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+    body { background: #FFF7EE; font-family: 'Jua', sans-serif; color: #2B2118; position: relative; }
+    .wrap { position: absolute; inset: 0; padding: 70px 80px 64px; display: flex; flex-direction: column; justify-content: space-between; }
+    .logo { font-size: 150px; line-height: 1; color: #FF6B3D; letter-spacing: -4px; }
+    .tag { font-size: 40px; line-height: 1.35; margin-top: 24px; }
+    .games { display: flex; flex-wrap: wrap; gap: 12px; max-width: 700px; margin-bottom: 22px; }
+    .chip { background: #fff; border-radius: 999px; padding: 10px 22px; font-size: 27px; box-shadow: 0 4px 0 rgba(43, 33, 24, 0.08); }
+    .url { font-size: 30px; color: #8A7B6E; }
+    .tiles { position: absolute; right: 86px; top: 120px; display: grid; grid-template-columns: repeat(2, 132px); gap: 18px; transform: rotate(6deg); }
+    .tile { width: 132px; height: 144px; background: #2B2118; color: #fff; border-radius: 26px; display: flex; align-items: center; justify-content: center; font-size: 86px; box-shadow: 0 10px 24px rgba(43, 33, 24, 0.18); }
+    .tile.o { background: #FF6B3D; }
+    .tile.b { background: #2F80ED; }
+    .tile.y { background: #F2B705; color: #2B2118; }
+  </style>
+</head>
+<body>
+  <div class="tiles">
+    <div class="tile">ㄴ</div>
+    <div class="tile o">ㄱ</div>
+    <div class="tile b">ㄷ</div>
+    <div class="tile y">?</div>
+  </div>
+  <div class="wrap">
+    <div>
+      <div class="logo">놀게더</div>
+      <div class="tag">링크 하나로 다 같이<br>설치 없이 바로 시작하는 파티게임</div>
+    </div>
+    <div>
+      <div class="games">
+        <span class="chip">초성 배틀</span>
+        <span class="chip">라이어 게임</span>
+        <span class="chip">밸런스 게임</span>
+        <span class="chip">텔레파시</span>
+        <span class="chip">우리 얼마나 알까</span>
+      </div>
+      <div class="url">nolgether.com</div>
+    </div>
+  </div>
+</body>
+</html>

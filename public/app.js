@@ -629,11 +629,12 @@
   }
 
   function finalBlock(g, againLabel, extra = '') {
+    const titles = g.titles || [];
     return `
       <div class="banner">최종 결과</div>
       ${extra}
-      <section class="card">${rankingBlock(g.ranking)}</section>
-      ${g.titles.length ? `<section class="card"><div class="label">오늘의 칭호</div><div class="titles">${g.titles.map(t => `
+      ${g.ranking ? `<section class="card">${rankingBlock(g.ranking)}</section>` : ''}
+      ${titles.length ? `<section class="card"><div class="label">오늘의 칭호</div><div class="titles">${g.titles.map(t => `
         <div class="title-card"><div class="t">${esc(t.title)}</div><div>${names(t.ids)}</div><div class="d">${esc(t.desc)}</div></div>`).join('')}</div></section>` : ''}
       ${isHost() ? `<div class="actions">
         <button class="btn primary big" data-act="restart">${againLabel}</button>
@@ -915,7 +916,12 @@
   function telepathyPage(g) {
     const s = g.summary;
     if (g.phase === 'final') {
-      return finalBlock(g, '텔레파시 한 번 더', scoreCard('텔레파시 지수', s.telepathy, s.label, `서로의 선택을 맞힌 비율이에요 · 같은 쪽을 고른 비율 ${s.match}%`));
+      const recap = `
+        <section class="card">
+          <div class="label">질문별 결과</div>
+          ${g.history.map(r => `<div class="line"><span>${r.same ? '💞' : '↔️'}</span><span>${esc(r.a)} vs ${esc(r.b)}</span><span class="${r.same ? 'plus' : 'muted'}" style="margin-left:auto">${r.same ? '통함' : '엇갈림'}</span></div>`).join('')}
+        </section>`;
+      return finalBlock(g, '텔레파시 한 번 더', scoreCard('텔레파시 지수', s.percent, s.label, `${s.total}문제 중 ${s.matches}번 통했어요`) + recap);
     }
     const q = g.question;
     const textOf = side => (side === 'A' ? q.a : side === 'B' ? q.b : '(고르지 않음)');
@@ -928,43 +934,27 @@
         const dim = me && me.choice && !on;
         return `<button class="side ${sd.toLowerCase()} ${on ? 'on' : ''} ${dim ? 'dim' : ''}" ${me ? gameAct('choose', `data-side="${sd}"`) : 'disabled'}>${esc(textOf(sd))}</button>`;
       };
-      let step = '';
-      if (!me) {
-        step = `<section class="card center"><div class="players" style="justify-content:center">${g.pair.map(id => pchip(id)).join('')}</div><p class="hint">두 사람이 답하는 중이에요</p></section>`;
-      } else if (!me.choice) {
-        step = '<p class="hint" style="text-align:center">먼저 내 선택을 골라주세요</p>';
-      } else if (!me.guess) {
-        step = `<section class="card center">
-          <p class="big-text">${esc(person(me.partnerId).name)}님은 뭘 골랐을까?</p>
-          <div class="predict-row" style="width:100%">
-            <button class="btn a big" ${gameAct('guess', 'data-side="A"')}>${esc(q.a)}</button>
-            <button class="btn b big" ${gameAct('guess', 'data-side="B"')}>${esc(q.b)}</button>
-          </div>
-          <p class="hint">맞히면 1점! 둘 다 맞히면 텔레파시 지수가 올라가요.</p>
-        </section>`;
-      } else {
-        step = `<div class="waiting">✅ 제출 완료! 예측: "${esc(textOf(me.guess))}" · ${esc(person(me.partnerId).name)}님을 기다리는 중</div>`;
-      }
+      let step;
+      if (!me) step = `<section class="card center"><div class="players" style="justify-content:center">${g.pair.map(id => pchip(id)).join('')}</div><p class="hint">두 사람이 고르는 중이에요</p></section>`;
+      else if (!me.choice) step = '<p class="hint" style="text-align:center">둘이 같은 쪽을 고르면 통한 거예요!</p>';
+      else step = `<div class="waiting">✅ 골랐어요! ${esc(person(me.partnerId).name)}님을 기다리는 중 · 바꾸려면 다시 누르세요</div>`;
       return `
         ${head}<h2>${me ? '당신의 선택은?' : '둘의 선택은?'}</h2></div>
         ${timer(g.deadline)}
         <div class="vs">${side('A')}${side('B')}<div class="vs-badge">VS</div></div>
         ${step}
-        <div class="progress">${g.answeredCount}/2명 제출</div>
+        <div class="progress">${g.answeredCount}/2명 선택</div>
         ${hostBtn('바로 공개', gameAct('reveal'), 'big')}`;
     }
 
     // result
     const r = g.result;
-    const rows = g.pair.map(id => {
-      const a = r.answers[id] || {};
-      return `<div class="line">${pchip(id)}<span class="quote">"${esc(textOf(a.choice))}"</span><span class="${r.hits[id] ? 'plus' : 'muted'}">${r.hits[id] ? '예측 성공 +1' : '예측 실패'}</span></div>`;
-    }).join('');
+    const rows = g.pair.map(id => `<div class="line">${pchip(id)}<span class="quote">"${esc(textOf(r.choices[id]))}"</span></div>`).join('');
     return `
       ${head}<h2>${esc(q.a)} vs ${esc(q.b)}</h2></div>
       <div class="banner ${r.same ? '' : 'blue'}">${r.same ? '통했다! 💞' : '엇갈렸다!'}<small>${r.same ? '둘이 같은 쪽을 골랐어요' : '서로 다른 쪽을 골랐어요'}</small></div>
       <section class="card">${rows}</section>
-      <div class="progress">지금까지 텔레파시 지수 ${s.telepathy}점</div>
+      <div class="progress">지금까지 ${s.total}문제 중 ${s.matches}번 통했어요</div>
       ${hostBtn(g.lastQuestion ? '최종 결과 보기' : '다음 질문', gameAct('next'))}
       ${waitingHost()}`;
   }

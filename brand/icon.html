@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <!-- 앱 아이콘. icon.html?s=192 처럼 크기를 받아 왼쪽 위에 그 크기로 그린다.
+       (헤드리스 브라우저는 창 폭에 최솟값이 있어서 창 크기 기준으로 그리면 작은 아이콘이 잘린다)
+       글자는 마스크 아이콘 안전 영역(가운데 80%) 안에 둔다. -->
+  <link href="https://fonts.googleapis.com/css2?family=Jua&display=block" rel="stylesheet">
+  <style>
+    html, body { margin: 0; overflow: hidden; background: #FF6B3D; }
+    .icon { width: var(--s); height: var(--s); display: flex; align-items: center; justify-content: center; }
+    .mark { font-family: 'Jua', sans-serif; color: #fff; font-size: calc(var(--s) * 0.6); line-height: 1; transform: translateY(4%); }
+  </style>
+  <script>
+    const size = Number(new URLSearchParams(location.search).get('s')) || 512;
+    document.documentElement.style.setProperty('--s', `${size}px`);
+  </script>
+</head>
+<body>
+  <div class="icon"><div class="mark">놀</div></div>
+</body>
+</html>

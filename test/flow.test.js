@@ -238,24 +238,16 @@ async function main() {
     await again.call('lobby:settings', { settings: { count: 5 } });
     assert.ok((await again.call('game:start')).ok, 'telepathy start');
     await Promise.all(pair.map(p => p.until(phase('answer'), 'tp answer')));
-    for (const p of pair) {
-      await p.call('game:action', { type: 'choose', side: 'A' });
-      await p.call('game:action', { type: 'guess', side: 'A' });
-    }
+    for (const p of pair) await p.call('game:action', { type: 'choose', side: 'A' });
     const tp1 = await again.until(phase('result'), 'tp result 1');
-    assert.equal(tp1.game.result.same, true);
-    assert.ok(Object.values(tp1.game.result.hits).every(Boolean), 'both read each other');
+    assert.equal(tp1.game.result.same, true, 'same choice = 통함');
 
     await again.call('game:action', { type: 'next' });
     await again.until(s => phase('answer')(s) && s.game.index === 1, 'tp q2');
     await again.call('game:action', { type: 'choose', side: 'A' });
-    await again.call('game:action', { type: 'guess', side: 'B' });
     await mate.call('game:action', { type: 'choose', side: 'B' });
-    await mate.call('game:action', { type: 'guess', side: 'B' });
     const tp2 = await again.until(phase('result'), 'tp result 2');
     assert.equal(tp2.game.result.same, false);
-    assert.equal(tp2.game.result.hits[id(again)], true);
-    assert.equal(tp2.game.result.hits[id(mate)], false);
 
     for (let i = 2; i < 5; i++) {
       await again.call('game:action', { type: 'next' });
@@ -265,8 +257,10 @@ async function main() {
     }
     await again.call('game:action', { type: 'next' });
     const tpf = await again.until(phase('final'), 'tp final');
-    assert.equal(tpf.game.summary.telepathy, 30, '3 hits out of 10');
-    console.log('✓ 텔레파시: 2명 제한, 서로 맞히기, 텔레파시 지수');
+    assert.equal(tpf.game.summary.percent, 20, '1 match out of 5');
+    const page = await fetch(`${URL}/r/${code}`).then(r => r.text());
+    assert.ok(page.includes(`${again.name}님이 놀게더에 초대했어요`) && page.includes('og-image.png'), 'room link preview');
+    console.log('✓ 텔레파시: 2명 제한, 같은 선택이면 통함, 텔레파시 지수 / 방 링크 미리보기');
 
     // ---------------- 초성 배틀
     await again.call('game:end');
