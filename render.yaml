@@ -11,3 +11,6 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "24"
+      # 초대 링크와 QR에 쓸 주소
+      - key: PUBLIC_URL
+        value: https://nolgether.com
