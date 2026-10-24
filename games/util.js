@@ -18,8 +18,17 @@ function oneOf(value, allowed, fallback) {
 }
 
 // 띄어쓰기, 대소문자, 문장부호 차이는 같은 답으로 본다.
+// 일부 키보드는 한글을 자모로 나눠 보내므로 NFC로 합친다.
 function normalizeAnswer(text) {
-  return String(text || '').toLowerCase().replace(/[\s.,!?~'"·\-_()]/g, '');
+  return String(text || '').normalize('NFC').toLowerCase().replace(/[\s.,!?~'"·\-_()]/g, '');
+}
+
+// 2명 게임의 결과 점수(0~100)에 붙일 이름
+function pairLabel(score) {
+  if (score >= 90) return '영혼의 단짝';
+  if (score >= 70) return '찰떡 콤비';
+  if (score >= 50) return '통하는 사이';
+  return '알아가는 중';
 }
 
 // 게임 단계 전환. 제한시간이 있으면 끝났을 때 onTimeout 후 모두에게 상태를 다시 보낸다.
@@ -56,4 +65,4 @@ function topOf(counts) {
   return Object.keys(counts).filter(id => counts[id] === max);
 }
 
-module.exports = { shuffle, pick, oneOf, normalizeAnswer, setPhase, ranking, topOf };
+module.exports = { shuffle, pick, oneOf, normalizeAnswer, pairLabel, setPhase, ranking, topOf };

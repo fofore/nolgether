@@ -9,8 +9,11 @@ const { Server } = require('socket.io');
 const QRCode = require('qrcode');
 
 const GAMES = {
+  chosung: require('./games/chosung'),
   liar: require('./games/liar'),
   balance: require('./games/balance'),
+  telepathy: require('./games/telepathy'),
+  weknow: require('./games/weknow'),
 };
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -47,8 +50,7 @@ const PUBLIC_URL = (DEPLOYED_URL || `http://${lanAddresses()[0] || 'localhost'}:
 
 const CATALOG = {
   games: Object.values(GAMES).map(g => g.info),
-  liar: GAMES.liar.catalog,
-  balance: GAMES.balance.catalog,
+  ...Object.fromEntries(Object.entries(GAMES).map(([key, g]) => [key, g.catalog])),
 };
 
 const app = express();
@@ -108,7 +110,7 @@ function createRoom() {
     code: newCode(),
     players: [],
     hostId: null,
-    gameKey: 'liar',
+    gameKey: 'chosung',
     settings: Object.fromEntries(Object.entries(GAMES).map(([k, g]) => [k, { ...g.defaultSettings }])),
     game: null,
     screens: new Set(),
@@ -407,6 +409,7 @@ io.on('connection', socket => {
     const { info } = GAMES[room.gameKey];
     const count = activePlayers(room).filter(p => p.connected).length;
     if (count < info.minPlayers) return { ok: false, error: `${info.title}은(는) 최소 ${info.minPlayers}명이 필요해요.` };
+    if (info.maxPlayers && count > info.maxPlayers) return { ok: false, error: `${info.title}은(는) ${info.maxPlayers}명만 할 수 있어요.` };
     startGame(room);
   }));
 

@@ -43,6 +43,20 @@ function client(name) {
 }
 
 const phase = p => s => s.game && s.game.phase === p;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const CHOSUNG = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+const { CATEGORIES } = require('../games/chosung')._test;
+
+// 초성 배틀 정답은 화면에 안 보이므로, 같은 주제·초성의 단어를 차례로 넣어 맞힌다.
+async function solveChosung(player, s) {
+  const words = CATEGORIES.find(c => c.name === s.game.category).words.filter(w => w.chosung === s.game.chosung);
+  for (const w of words) {
+    const res = await player.call('game:action', { type: 'guess', text: w.main });
+    if (res.verdict === 'correct') return res;
+    await sleep(450);
+  }
+  throw new Error('could not solve chosung question');
+}
 
 async function main() {
   const server = await startServer();
@@ -70,6 +84,11 @@ async function main() {
     assert.ok(!notHost.ok, 'guest cannot start');
 
     // ---------------- 라이어 게임
+    assert.equal(host.state.gameKey, 'chosung', 'default game is 초성 배틀');
+    assert.ok((await host.call('lobby:select', { gameKey: 'telepathy' })).ok);
+    const tooMany = await host.call('game:start');
+    assert.ok(!tooMany.ok && tooMany.error.includes('2명만'), 'telepathy rejects 4 players');
+    assert.ok((await host.call('lobby:select', { gameKey: 'liar' })).ok);
     assert.ok((await host.call('lobby:settings', { settings: { rounds: 1 } })).ok);
     assert.ok((await host.call('game:start')).ok, 'liar start');
     await Promise.all(players.map(p => p.until(phase('talk'), 'talk')));
@@ -207,6 +226,138 @@ async function main() {
     await again.until(phase('result'), 'result without leaver');
     assert.ok(again.state.players.every(p => p.name !== leaver.name), 'leaver removed from players');
     console.log('✓ 게임 중 나가기: 남은 사람끼리 계속 진행');
+
+    // 여기부터는 2명(again = 방장, mate)이 남은 방에서 진행한다.
+    const mate = guests[2];
+    const pair = [again, mate];
+    const id = p => p.state.me.id;
+
+    // ---------------- 텔레파시
+    await again.call('game:end');
+    await again.call('lobby:select', { gameKey: 'telepathy' });
+    await again.call('lobby:settings', { settings: { count: 5 } });
+    assert.ok((await again.call('game:start')).ok, 'telepathy start');
+    await Promise.all(pair.map(p => p.until(phase('answer'), 'tp answer')));
+    for (const p of pair) {
+      await p.call('game:action', { type: 'choose', side: 'A' });
+      await p.call('game:action', { type: 'guess', side: 'A' });
+    }
+    const tp1 = await again.until(phase('result'), 'tp result 1');
+    assert.equal(tp1.game.result.same, true);
+    assert.ok(Object.values(tp1.game.result.hits).every(Boolean), 'both read each other');
+
+    await again.call('game:action', { type: 'next' });
+    await again.until(s => phase('answer')(s) && s.game.index === 1, 'tp q2');
+    await again.call('game:action', { type: 'choose', side: 'A' });
+    await again.call('game:action', { type: 'guess', side: 'B' });
+    await mate.call('game:action', { type: 'choose', side: 'B' });
+    await mate.call('game:action', { type: 'guess', side: 'B' });
+    const tp2 = await again.until(phase('result'), 'tp result 2');
+    assert.equal(tp2.game.result.same, false);
+    assert.equal(tp2.game.result.hits[id(again)], true);
+    assert.equal(tp2.game.result.hits[id(mate)], false);
+
+    for (let i = 2; i < 5; i++) {
+      await again.call('game:action', { type: 'next' });
+      await again.until(s => phase('answer')(s) && s.game.index === i, `tp q${i + 1}`);
+      await again.call('game:action', { type: 'reveal' });
+      await again.until(phase('result'), `tp r${i + 1}`);
+    }
+    await again.call('game:action', { type: 'next' });
+    const tpf = await again.until(phase('final'), 'tp final');
+    assert.equal(tpf.game.summary.telepathy, 30, '3 hits out of 10');
+    console.log('✓ 텔레파시: 2명 제한, 서로 맞히기, 텔레파시 지수');
+
+    // ---------------- 초성 배틀
+    await again.call('game:end');
+    await again.call('lobby:select', { gameKey: 'chosung' });
+    await again.call('lobby:settings', { settings: { count: 5 } });
+    assert.ok((await again.call('game:start')).ok, 'chosung start');
+    const cq = await mate.until(phase('question'), 'cs question');
+    assert.equal(cq.game.answer, undefined, 'answer hidden during question');
+
+    const mismatch = await mate.call('game:action', { type: 'guess', text: '가나다라마바사아' });
+    assert.equal(mismatch.verdict, 'mismatch');
+    await sleep(450);
+    // 초성만 같은 가짜 단어(예: ㄱㅊㅉㄱ → 가차짜가)
+    const fake = [...cq.game.chosung.replace(/\s/g, '')].map(ch => String.fromCharCode(0xac00 + CHOSUNG.indexOf(ch) * 588)).join('');
+    const near = await mate.call('game:action', { type: 'guess', text: fake });
+    assert.equal(near.verdict, 'near');
+    const slow = await mate.call('game:action', { type: 'guess', text: fake });
+    assert.equal(slow.verdict, 'slow', 'rapid resubmit throttled');
+
+    const solved = await solveChosung(again, cq);
+    assert.equal(solved.rank, 1);
+    await again.call('game:action', { type: 'reveal' });
+    const cr = await again.until(phase('reveal'), 'cs reveal');
+    assert.ok(cr.game.answer, 'answer shown after question');
+    const nearEntry = cr.game.near.find(e => e.id === id(mate));
+    assert.ok(nearEntry && nearEntry.text === fake);
+    const notHostAccept = await mate.call('game:action', { type: 'accept', index: nearEntry.index });
+    assert.ok(!notHostAccept.ok, 'only host can accept');
+    await again.call('game:action', { type: 'accept', index: nearEntry.index });
+    const accepted = await again.until(s => s.game.points[id(mate)] === 1, 'near answer accepted');
+    assert.equal(accepted.game.points[id(again)], 3);
+
+    // 둘 다 맞히면 제한시간 전에 자동으로 정답 공개
+    await again.call('game:action', { type: 'next' });
+    const cq2 = await again.until(s => phase('question')(s) && s.game.index === 1, 'cs q2');
+    await solveChosung(mate, cq2);
+    await solveChosung(again, cq2);
+    const cr2 = await again.until(phase('reveal'), 'cs auto reveal');
+    assert.equal(cr2.game.solvers[0], id(mate));
+    assert.equal(cr2.game.points[id(mate)], 3);
+    assert.equal(cr2.game.points[id(again)], 2);
+
+    for (let i = 2; i < 5; i++) {
+      await again.call('game:action', { type: 'next' });
+      await again.until(s => phase('question')(s) && s.game.index === i, `cs q${i + 1}`);
+      await again.call('game:action', { type: 'reveal' });
+      await again.until(phase('reveal'), `cs r${i + 1}`);
+    }
+    await again.call('game:action', { type: 'next' });
+    const cf = await again.until(phase('final'), 'cs final');
+    assert.ok(cf.game.titles.some(t => t.title === '초성 천재'));
+    assert.equal(cf.game.ranking.find(r => r.id === id(again)).score, 5);
+    assert.equal(cf.game.ranking.find(r => r.id === id(mate)).score, 4);
+    console.log('✓ 초성 배틀: 정답·초성 불일치·아쉬운 답 판정, 연타 방지, 방장 인정, 자동 공개, 순위 점수');
+
+    // ---------------- 우리 얼마나 알까
+    await again.call('game:end');
+    await again.call('lobby:select', { gameKey: 'weknow' });
+    await again.call('lobby:settings', { settings: { count: 6 } });
+    assert.ok((await again.call('game:start')).ok, 'weknow start');
+    const wq = await again.until(phase('answer'), 'wk answer');
+    assert.ok(!wq.game.text.includes('{name}'), 'subject name filled in');
+    const subjectOf = s => (s.game.subjectId === id(again) ? again : mate);
+    const guesserOf = s => (s.game.subjectId === id(again) ? mate : again);
+    await guesserOf(wq).call('game:action', { type: 'pick', option: 1 });
+    await sleep(100);
+    assert.equal(again.state.game.phase, 'answer', 'waits for the subject');
+    await subjectOf(wq).call('game:action', { type: 'pick', option: 1 });
+    const wr = await again.until(phase('result'), 'wk result');
+    assert.deepEqual(wr.game.correct, [id(guesserOf(wq))]);
+
+    await again.call('game:action', { type: 'next' });
+    const wq2 = await again.until(s => phase('answer')(s) && s.game.index === 1, 'wk q2');
+    assert.notEqual(wq2.game.subjectId, wq.game.subjectId, 'subject rotates');
+    await subjectOf(wq2).call('game:action', { type: 'pick', option: 0 });
+    await guesserOf(wq2).call('game:action', { type: 'pick', option: 2 });
+    const wr2 = await again.until(phase('result'), 'wk result 2');
+    assert.deepEqual(wr2.game.correct, []);
+
+    for (let i = 2; i < 6; i++) {
+      await again.call('game:action', { type: 'next' });
+      await again.until(s => phase('answer')(s) && s.game.index === i, `wk q${i + 1}`);
+      await again.call('game:action', { type: 'reveal' });
+      await again.until(phase('result'), `wk r${i + 1}`);
+    }
+    await again.call('game:action', { type: 'next' });
+    const wf = await again.until(phase('final'), 'wk final');
+    assert.equal(wf.game.summary.pair, true);
+    assert.equal(wf.game.summary.score, 50, 'unanswered questions are not counted');
+    console.log('✓ 우리 얼마나 알까: 주인공 차례 돌기, 주인공 답 대기, 궁합 점수');
+
     again.socket.close();
 
     console.log('\n모든 테스트 통과');

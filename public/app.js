@@ -3,6 +3,7 @@
 
   const socket = io();
   const root = document.getElementById('app');
+  const dock = document.getElementById('dock');
   const toastEl = document.getElementById('toast');
 
   const store = {
@@ -227,6 +228,8 @@
         const payload = { type: data.type };
         if (data.target) payload.target = data.target;
         if (data.side) payload.side = data.side;
+        if (data.option !== undefined) payload.option = Number(data.option);
+        if (data.index !== undefined) payload.index = Number(data.index);
         return request('game:action', payload);
       }
       case 'guess': {
@@ -335,7 +338,64 @@
       }
     }
     tick();
+    renderDock();
   }
+
+  // 초성 배틀 입력창은 화면 아래에 고정하고, 다시 그리지 않는다.
+  // 다시 그리면 휴대폰 키보드가 닫혀서 빠르게 입력할 수 없기 때문이다.
+  function renderDock() {
+    const g = state && state.game;
+    const show = route.view !== 'screen' && g && g.key === 'chosung' && g.phase === 'question' && g.me && !g.me.solved;
+    document.body.classList.toggle('has-dock', Boolean(show));
+    if (!show) {
+      if (!dock.hidden) {
+        dock.hidden = true;
+        dock.innerHTML = '';
+        delete dock.dataset.q;
+      }
+      return;
+    }
+    if (dock.hidden || dock.dataset.q !== String(g.index)) {
+      dock.dataset.q = String(g.index);
+      dock.innerHTML = `
+        <form class="dock-form" id="cs-form">
+          <input id="cs-guess" maxlength="30" placeholder="정답 입력" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
+          <button class="btn primary" type="submit">제출</button>
+        </form>
+        <div class="dock-msg" id="cs-msg" aria-live="polite"></div>`;
+      dock.hidden = false;
+    }
+  }
+
+  const DOCK_MESSAGES = {
+    mismatch: '초성이 달라요',
+    near: '초성은 맞는데 아쉬워요! 방장이 인정해 줄 수도 있어요',
+    limit: '이번 문제는 더 입력할 수 없어요',
+  };
+
+  // 제출 버튼을 눌러도 입력창 포커스(키보드)가 유지되게 한다.
+  dock.addEventListener('pointerdown', e => {
+    if (e.target.closest('button')) e.preventDefault();
+  });
+
+  dock.addEventListener('submit', async e => {
+    e.preventDefault();
+    const input = dock.querySelector('#cs-guess');
+    const msg = dock.querySelector('#cs-msg');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    input.focus();
+    const res = await request('game:action', { type: 'guess', text });
+    if (!res.ok || !msg) return;
+    if (res.verdict === 'correct') return toast(`정답! ${res.rank}등`);
+    const message = DOCK_MESSAGES[res.verdict];
+    if (!message) return;
+    msg.textContent = `"${text}" · ${message}`;
+    msg.classList.remove('shake');
+    void msg.offsetWidth; // 같은 애니메이션을 다시 재생하기 위해 스타일을 다시 계산시킨다
+    msg.classList.add('shake');
+  });
 
   function tick() {
     const now = Date.now() + clockOffset;
@@ -423,7 +483,13 @@
     const host = isHost();
     const selected = state.catalog.games.find(g => g.key === state.gameKey);
     const connected = state.players.filter(p => p.connected).length;
-    const enough = connected >= selected.minPlayers;
+    const tooFew = connected < selected.minPlayers;
+    const tooMany = Boolean(selected.maxPlayers) && connected > selected.maxPlayers;
+    const enough = !tooFew && !tooMany;
+    let notice = '';
+    if (tooFew) notice = `${esc(selected.title)}은(는) 최소 ${selected.minPlayers}명이 필요해요. 친구를 초대해 주세요!`;
+    else if (tooMany) notice = `${esc(selected.title)}은(는) ${selected.maxPlayers}명만 할 수 있어요. 다른 게임을 골라주세요.`;
+    else if (state.gameKey === 'balance' && connected === 2) notice = '2명이면 텔레파시가 더 재밌어요!';
     return `
       <main class="page">
         <div class="topbar">
@@ -461,7 +527,7 @@
 
         ${host
           ? `<button class="btn primary big" data-act="start" ${enough ? '' : 'disabled'}>게임 시작</button>
-             ${enough ? '' : `<p class="hint" style="text-align:center">${esc(selected.title)}은(는) 최소 ${selected.minPlayers}명이 필요해요. 친구를 초대해 주세요!</p>`}`
+             ${notice ? `<p class="hint" style="text-align:center">${notice}</p>` : ''}`
           : '<div class="waiting">방장이 게임을 시작하길 기다리는 중...</div>'}
       </main>`;
   }
@@ -478,6 +544,25 @@
   }
 
   function settingsBlock(key, s, enabled) {
+    if (key === 'chosung') {
+      return [
+        chips('count', '문제 수', [[5, '5문제'], [10, '10문제'], [15, '15문제']], s.count, enabled),
+        chips('category', '주제', [['random', '랜덤'], ...state.catalog.chosung.categories.map(c => [c, c])], s.category, enabled),
+        chips('seconds', '제한 시간', [[20, '20초'], [30, '30초'], [45, '45초']], s.seconds, enabled, '시간이 절반 지나면 첫 글자를 힌트로 보여줘요.'),
+      ].join('');
+    }
+    if (key === 'telepathy') {
+      return [
+        chips('count', '문제 수', [[5, '5문제'], [7, '7문제'], [10, '10문제']], s.count, enabled),
+        chips('category', '주제', [['all', '전체'], ...state.catalog.telepathy.categories.map(c => [c, c])], s.category, enabled),
+      ].join('');
+    }
+    if (key === 'weknow') {
+      return [
+        chips('count', '문제 수', [[6, '6문제'], [10, '10문제'], [14, '14문제']], s.count, enabled, '참가자가 돌아가며 주인공이 돼요.'),
+        chips('category', '주제', [['all', '전체'], ...state.catalog.weknow.categories.map(c => [c, c])], s.category, enabled),
+      ].join('');
+    }
     if (key === 'liar') {
       return [
         chips('rounds', '라운드', [[1, '1판'], [3, '3판'], [5, '5판'], [7, '7판']], s.rounds, enabled),
@@ -520,7 +605,8 @@
   function gamePage() {
     const g = state.game;
     const info = state.catalog.games.find(x => x.key === g.key);
-    const body = g.key === 'liar' ? liarPage(g) : balancePage(g);
+    const pages = { liar: liarPage, balance: balancePage, chosung: chosungPage, telepathy: telepathyPage, weknow: weknowPage };
+    const body = pages[g.key](g);
     const screen = route.view === 'screen';
     return `
       <main class="page">
@@ -542,9 +628,10 @@
     }).join('')}</ol>`;
   }
 
-  function finalBlock(g, againLabel) {
+  function finalBlock(g, againLabel, extra = '') {
     return `
       <div class="banner">최종 결과</div>
+      ${extra}
       <section class="card">${rankingBlock(g.ranking)}</section>
       ${g.titles.length ? `<section class="card"><div class="label">오늘의 칭호</div><div class="titles">${g.titles.map(t => `
         <div class="title-card"><div class="t">${esc(t.title)}</div><div>${names(t.ids)}</div><div class="d">${esc(t.desc)}</div></div>`).join('')}</div></section>` : ''}
@@ -737,6 +824,207 @@
       ${head}<h2>${r.majority === 'tie' ? '정확히 반반!' : '결과 공개'}</h2></div>
       <section class="card"><div class="bars">${bar('A', r.aCount, q.a, r.a)}${bar('B', r.bCount, q.b, r.b)}</div></section>
       ${lonely}
+      ${mine}
+      <section class="card"><div class="label">점수</div>${rankingBlock(g.ranking)}</section>
+      ${hostBtn(g.lastQuestion ? '최종 결과 보기' : '다음 질문', gameAct('next'))}
+      ${waitingHost()}`;
+  }
+
+  // ------------------------------------------------------------ chosung
+
+  function rankChip(id, label) {
+    const p = person(id);
+    return `<span class="pchip"><b class="rank-no">${label}</b><span class="dot" style="background:${esc(p.color)}"></span>${esc(p.name)}</span>`;
+  }
+
+  function chosungCard(g) {
+    const letters = [...g.chosung].map(ch => (ch === ' ' ? '<span class="gap"></span>' : `<span class="cho">${esc(ch)}</span>`)).join('');
+    return `
+      <section class="chosung-card">
+        <div class="cho-row">${letters}</div>
+        ${g.hint ? `<div class="hint-chip">힌트: "${esc(g.hint)}"(으)로 시작해요</div>` : ''}
+      </section>`;
+  }
+
+  function chosungPage(g) {
+    if (g.phase === 'final') return finalBlock(g, '초성 배틀 한 번 더');
+    const head = `<div class="phase-head"><div class="step">${g.index + 1}/${g.total}번째 문제</div><h2>주제: ${esc(g.category)}</h2></div>`;
+
+    if (g.phase === 'question') {
+      const solvers = g.solvers.map((id, i) => rankChip(id, `${i + 1}등`)).join('');
+      const mine = g.me && g.me.solved
+        ? `<div class="banner blue">정답! ${g.me.rank}등<small>다른 사람이 맞히길 기다리는 중</small></div>`
+        : '';
+      return `
+        ${head}
+        ${chosungCard(g)}
+        ${timer(g.deadline)}
+        ${mine}
+        <section class="card center">
+          <div class="label">정답자 ${g.solvers.length}/${g.playerCount}명</div>
+          ${solvers ? `<div class="players" style="justify-content:center">${solvers}</div>` : '<p class="hint">아직 아무도 못 맞혔어요</p>'}
+        </section>
+        ${hostBtn('정답 공개', gameAct('reveal'), 'ghost')}`;
+    }
+
+    // reveal
+    const aliases = g.aliases.length ? `<small>${g.aliases.map(esc).join(', ')}도 정답</small>` : '';
+    const solvers = g.solvers.length
+      ? g.solvers.map((id, i) => `<div class="line">${rankChip(id, `${i + 1}등`)}<span class="plus">+${g.points[id]}</span></div>`).join('')
+      : '<p class="hint">아무도 못 맞혔어요</p>';
+    const near = g.near.filter(e => !e.solved);
+    const nearBlock = near.length ? `
+      <section class="card">
+        <div class="label">아쉬운 답 (초성은 맞았어요)</div>
+        ${near.map(e => `
+          <div class="line">
+            ${pchip(e.id)}<span class="quote">"${esc(e.text)}"</span>
+            ${e.accepted ? '<span class="plus">인정 +1</span>' : ''}
+            ${isHost() ? `<button class="btn small ${e.accepted ? 'ghost' : ''}" ${gameAct('accept', `data-index="${e.index}"`)}>${e.accepted ? '인정 취소' : '인정'}</button>` : ''}
+          </div>`).join('')}
+        ${isHost() ? '<p class="hint">주제에 맞는 답이면 [인정]을 눌러 1점을 주세요.</p>' : ''}
+      </section>` : '';
+    const wrongBlock = g.wrong.length ? `
+      <section class="card">
+        <div class="label">오답 모음</div>
+        ${g.wrong.map(e => `<div class="line"><span class="quote">"${esc(e.text)}"</span><span class="muted">${esc(person(e.id).name)}</span></div>`).join('')}
+      </section>` : '';
+    return `
+      ${head}
+      <div class="banner">정답: ${esc(g.answer)}${aliases}</div>
+      <section class="card"><div class="label">정답자</div>${solvers}</section>
+      ${nearBlock}
+      ${wrongBlock}
+      <section class="card"><div class="label">점수</div>${rankingBlock(g.ranking, g.points)}</section>
+      ${hostBtn(g.lastQuestion ? '최종 결과 보기' : '다음 문제', gameAct('next'))}
+      ${waitingHost()}`;
+  }
+
+  // ------------------------------------------------------------ telepathy
+
+  function scoreCard(label, score, title, sub) {
+    return `
+      <section class="card center">
+        <div class="label">${label}</div>
+        <div class="big-score">${score}<small>점</small></div>
+        <p class="big-text">${esc(title)}</p>
+        ${sub ? `<p class="hint">${sub}</p>` : ''}
+      </section>`;
+  }
+
+  function telepathyPage(g) {
+    const s = g.summary;
+    if (g.phase === 'final') {
+      return finalBlock(g, '텔레파시 한 번 더', scoreCard('텔레파시 지수', s.telepathy, s.label, `서로의 선택을 맞힌 비율이에요 · 같은 쪽을 고른 비율 ${s.match}%`));
+    }
+    const q = g.question;
+    const textOf = side => (side === 'A' ? q.a : side === 'B' ? q.b : '(고르지 않음)');
+    const head = `<div class="phase-head"><div class="step">${g.index + 1}/${g.total}번째 질문 · ${esc(q.category)}</div>`;
+
+    if (g.phase === 'answer') {
+      const me = g.me;
+      const side = sd => {
+        const on = me && me.choice === sd;
+        const dim = me && me.choice && !on;
+        return `<button class="side ${sd.toLowerCase()} ${on ? 'on' : ''} ${dim ? 'dim' : ''}" ${me ? gameAct('choose', `data-side="${sd}"`) : 'disabled'}>${esc(textOf(sd))}</button>`;
+      };
+      let step = '';
+      if (!me) {
+        step = `<section class="card center"><div class="players" style="justify-content:center">${g.pair.map(id => pchip(id)).join('')}</div><p class="hint">두 사람이 답하는 중이에요</p></section>`;
+      } else if (!me.choice) {
+        step = '<p class="hint" style="text-align:center">먼저 내 선택을 골라주세요</p>';
+      } else if (!me.guess) {
+        step = `<section class="card center">
+          <p class="big-text">${esc(person(me.partnerId).name)}님은 뭘 골랐을까?</p>
+          <div class="predict-row" style="width:100%">
+            <button class="btn a big" ${gameAct('guess', 'data-side="A"')}>${esc(q.a)}</button>
+            <button class="btn b big" ${gameAct('guess', 'data-side="B"')}>${esc(q.b)}</button>
+          </div>
+          <p class="hint">맞히면 1점! 둘 다 맞히면 텔레파시 지수가 올라가요.</p>
+        </section>`;
+      } else {
+        step = `<div class="waiting">✅ 제출 완료! 예측: "${esc(textOf(me.guess))}" · ${esc(person(me.partnerId).name)}님을 기다리는 중</div>`;
+      }
+      return `
+        ${head}<h2>${me ? '당신의 선택은?' : '둘의 선택은?'}</h2></div>
+        ${timer(g.deadline)}
+        <div class="vs">${side('A')}${side('B')}<div class="vs-badge">VS</div></div>
+        ${step}
+        <div class="progress">${g.answeredCount}/2명 제출</div>
+        ${hostBtn('바로 공개', gameAct('reveal'), 'big')}`;
+    }
+
+    // result
+    const r = g.result;
+    const rows = g.pair.map(id => {
+      const a = r.answers[id] || {};
+      return `<div class="line">${pchip(id)}<span class="quote">"${esc(textOf(a.choice))}"</span><span class="${r.hits[id] ? 'plus' : 'muted'}">${r.hits[id] ? '예측 성공 +1' : '예측 실패'}</span></div>`;
+    }).join('');
+    return `
+      ${head}<h2>${esc(q.a)} vs ${esc(q.b)}</h2></div>
+      <div class="banner ${r.same ? '' : 'blue'}">${r.same ? '통했다! 💞' : '엇갈렸다!'}<small>${r.same ? '둘이 같은 쪽을 골랐어요' : '서로 다른 쪽을 골랐어요'}</small></div>
+      <section class="card">${rows}</section>
+      <div class="progress">지금까지 텔레파시 지수 ${s.telepathy}점</div>
+      ${hostBtn(g.lastQuestion ? '최종 결과 보기' : '다음 질문', gameAct('next'))}
+      ${waitingHost()}`;
+  }
+
+  // ------------------------------------------------------------ weknow
+
+  function weknowPage(g) {
+    const s = g.summary;
+    if (g.phase === 'final') {
+      const extra = s.pair
+        ? scoreCard('우리 궁합', s.score, s.label, '서로의 답을 맞힌 비율이에요')
+        : scoreCard('우리의 이해도', s.score, s.label, '모두가 주인공의 답을 맞힌 비율이에요');
+      return finalBlock(g, '우리 얼마나 알까 한 번 더', extra);
+    }
+    const subject = person(g.subjectId).name;
+    const head = `
+      <div class="phase-head">
+        <div class="step">${g.index + 1}/${g.total}번째 질문 · 주인공 ${esc(subject)}</div>
+        <h2>${esc(g.text)}</h2>
+      </div>`;
+
+    if (g.phase === 'answer') {
+      const me = g.me;
+      let label = `${esc(subject)}님이 고르는 중이에요`;
+      if (me && me.isSubject) label = '나에 대한 질문이에요. 솔직하게 골라주세요!';
+      else if (me) label = `${esc(subject)}님은 뭐라고 답했을까요?`;
+      const options = g.options.map((text, i) => `
+        <button class="option-btn ${me && me.pick === i ? 'on' : ''}" ${me ? gameAct('pick', `data-option="${i}"`) : 'disabled'}>${esc(text)}</button>`).join('');
+      return `
+        ${head}
+        ${timer(g.deadline)}
+        <p class="hint" style="text-align:center">${label}</p>
+        <div class="option-list">${options}</div>
+        <div class="progress">${g.subjectAnswered ? '주인공 답변 완료 ✓' : '주인공이 고르는 중...'} · ${g.guessedCount}/${g.guesserCount}명 예측 완료</div>
+        ${hostBtn('바로 공개', gameAct('reveal'), 'big')}`;
+    }
+
+    // result
+    if (g.answer === null) {
+      return `
+        ${head}
+        <section class="card center"><p class="big-text">${esc(subject)}님이 답하지 않았어요</p><p class="hint">이번 문제는 점수 없이 넘어가요.</p></section>
+        ${hostBtn(g.lastQuestion ? '최종 결과 보기' : '다음 질문', gameAct('next'))}
+        ${waitingHost()}`;
+    }
+    const pickedBy = i => Object.keys(g.guesses).filter(id => g.guesses[id] === i);
+    const options = g.options.map((text, i) => {
+      const who = pickedBy(i);
+      return `
+        <div class="option-btn result ${i === g.answer ? 'correct' : 'dim'}">
+          <span>${i === g.answer ? '✅ ' : ''}${esc(text)}</span>
+          ${who.length ? `<span class="players">${who.map(id => pchip(id)).join('')}</span>` : ''}
+        </div>`;
+    }).join('');
+    let mine = '';
+    if (g.me && !g.me.isSubject) mine = `<div class="waiting">${g.correct.includes(state.me.id) ? '🎯 맞혔어요! +1점' : '😅 아쉬워요'}</div>`;
+    return `
+      ${head}
+      <div class="option-list">${options}</div>
+      <div class="progress">${g.correct.length}명이 맞혔어요</div>
       ${mine}
       <section class="card"><div class="label">점수</div>${rankingBlock(g.ranking)}</section>
       ${hostBtn(g.lastQuestion ? '최종 결과 보기' : '다음 질문', gameAct('next'))}
