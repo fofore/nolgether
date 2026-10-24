@@ -390,6 +390,33 @@ body.screen .hint-chip { font-size: 26px; padding: 8px 22px; }
 @keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
 body.has-dock .page { padding-bottom: 130px; }
 
+/* ---------- 나는 누구게? */
+
+.wa-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.wa-card {
+  background: #FBF3EA;
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.wa-card.solved { background: #E7F7EE; }
+.wa-card.me { background: var(--ink); color: #fff; }
+.wa-name { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 14px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wa-word { font-family: var(--display); font-size: 26px; line-height: 1.2; word-break: keep-all; }
+.wa-word.hidden { color: var(--muted); }
+.wa-card.me .wa-word.hidden { color: #fff; letter-spacing: 4px; }
+.wa-cat { font-size: 13px; color: var(--muted); }
+.wa-card.me .wa-cat { color: rgba(255, 255, 255, 0.75); }
+.wa-rank { font-size: 13px; font-weight: 800; color: var(--good); }
+.wa-mine .wa-card { padding: 18px; align-items: center; text-align: center; }
+.wa-mine .wa-word { font-size: 40px; }
+body.screen .wa-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+body.screen .wa-word { font-size: 40px; }
+body.screen .wa-name { font-size: 20px; }
+
 /* ---------- 선택지형 (우리 얼마나 알까) */
 
 .option-list { display: flex; flex-direction: column; gap: 8px; }

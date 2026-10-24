@@ -239,6 +239,15 @@
         if (res.ok) ui.values.guess = '';
         return;
       }
+      case 'whoami-guess': {
+        const text = (ui.values['wa-guess'] || '').trim();
+        if (!text) return toast('내 단어를 입력해 주세요.');
+        const res = await request('game:action', { type: 'guess', text });
+        if (!res.ok) return;
+        ui.values['wa-guess'] = '';
+        render();
+        return toast(res.verdict === 'correct' ? `정답! ${res.rank}등으로 탈출!` : `땡! "${text}" 말고 다른 거예요`);
+      }
       default:
     }
   }
@@ -544,6 +553,13 @@
   }
 
   function settingsBlock(key, s, enabled) {
+    if (key === 'whoami') {
+      return [
+        chips('category', '주제', [['random', '랜덤 (사람마다 다른 주제)'], ...state.catalog.whoami.categories.map(c => [c, c])], s.category, enabled, '랜덤이면 내 단어의 주제만 힌트로 보여줘요.'),
+        chips('turnSeconds', '한 차례 시간', [[0, '무제한'], [30, '30초'], [60, '60초']], s.turnSeconds, enabled),
+        chips('penalty', '틀리면', [['none', '그냥 다음 사람'], ['skip', '한 번 쉬기']], s.penalty, enabled),
+      ].join('');
+    }
     if (key === 'chosung') {
       return [
         chips('count', '문제 수', [[5, '5문제'], [10, '10문제'], [15, '15문제']], s.count, enabled),
@@ -605,7 +621,7 @@
   function gamePage() {
     const g = state.game;
     const info = state.catalog.games.find(x => x.key === g.key);
-    const pages = { liar: liarPage, balance: balancePage, chosung: chosungPage, telepathy: telepathyPage, weknow: weknowPage };
+    const pages = { liar: liarPage, balance: balancePage, chosung: chosungPage, telepathy: telepathyPage, weknow: weknowPage, whoami: whoamiPage };
     const body = pages[g.key](g);
     const screen = route.view === 'screen';
     return `
@@ -1019,6 +1035,78 @@
       <section class="card"><div class="label">점수</div>${rankingBlock(g.ranking)}</section>
       ${hostBtn(g.lastQuestion ? '최종 결과 보기' : '다음 질문', gameAct('next'))}
       ${waitingHost()}`;
+  }
+
+  // ------------------------------------------------------------ whoami
+
+  function whoamiCard(c, isMe) {
+    const p = person(c.id);
+    const word = c.word
+      ? `<div class="wa-word">${esc(c.word)}</div>`
+      : `<div class="wa-word hidden">${isMe ? '❓❓❓' : '???'}</div>`;
+    return `
+      <div class="wa-card ${isMe ? 'me' : ''} ${c.rank ? 'solved' : ''}">
+        <div class="wa-name"><span class="dot" style="background:${esc(p.color)}"></span>${esc(p.name)}${isMe ? ' (나)' : ''}</div>
+        ${word}
+        ${c.category ? `<div class="wa-cat">${esc(c.category)}</div>` : ''}
+        ${c.rank ? `<div class="wa-rank">${c.rank}등 탈출</div>` : ''}
+      </div>`;
+  }
+
+  function wrongList(g) {
+    if (!g.wrongs.length) return '';
+    return `
+      <section class="card">
+        <div class="label">헛다리 모음</div>
+        ${g.wrongs.map(w => `<div class="line"><span class="quote">"${esc(w.text)}"</span><span class="muted">${esc(person(w.id).name)}</span></div>`).join('')}
+      </section>`;
+  }
+
+  function whoamiPage(g) {
+    const myId = meId();
+    const mine = g.cards.find(c => c.id === myId);
+    const others = g.cards.filter(c => c.id !== myId);
+    const grid = `<div class="wa-grid">${others.map(c => whoamiCard(c, false)).join('')}</div>`;
+
+    if (g.phase === 'final') {
+      const loser = g.loser ? `<div class="banner">벌칙 당첨!<small>${esc(person(g.loser).name)}님이 끝까지 못 맞혔어요</small></div>` : '';
+      const all = `<section class="card"><div class="label">모두의 단어</div><div class="wa-grid">${g.cards.map(c => whoamiCard(c, c.id === myId)).join('')}</div></section>`;
+      return finalBlock(g, '나는 누구게? 한 번 더', loser + all + wrongList(g));
+    }
+
+    const turnName = g.current ? person(g.current).name : '';
+    const me = g.me;
+    let title = `${esc(turnName)}님 차례`;
+    if (me && me.isTurn) title = '내 차례! 질문하고 맞혀보세요';
+    else if (!g.current) title = '차례를 기다리는 중';
+    const step = `남은 사람 ${g.remaining.length}명 · 탈출 ${g.solved.length}명${g.category ? ` · 주제 ${esc(g.category)}` : ''}`;
+
+    let action = '';
+    if (me && me.isTurn) {
+      action = `
+        <form class="card" data-act="whoami-guess">
+          <div class="label">"나 먹는 거야?"처럼 예/아니오로 물어보고, 알 것 같으면 맞혀보세요</div>
+          <div class="row">
+            <input id="wa-guess" maxlength="30" placeholder="내 단어는?" autocomplete="off">
+            <button class="btn primary" type="submit">맞히기</button>
+          </div>
+          <button class="btn ghost" type="button" ${gameAct('pass')}>질문만 하고 넘기기</button>
+          ${g.penalty === 'skip' ? '<p class="hint">틀리면 다음 차례를 한 번 쉬어요.</p>' : ''}
+        </form>`;
+    } else if (me && me.rank) {
+      action = '<div class="waiting">탈출 성공! 다른 사람들의 질문에 대답해 주세요</div>';
+    } else if (me) {
+      action = `<div class="waiting">${esc(turnName)}님의 질문에 대답해 주세요${me.skipping ? ' · 다음 차례는 쉬어요' : ''}</div>`;
+    }
+
+    return `
+      <div class="phase-head"><div class="step">${step}</div><h2>${title}</h2></div>
+      ${timer(g.deadline)}
+      ${mine ? `<div class="wa-mine">${whoamiCard(mine, true)}</div>` : ''}
+      ${action}
+      <section class="card"><div class="label">${state.me ? '다른 사람들의 단어 (본인은 몰라요!)' : '참가자'}</div>${grid}</section>
+      ${wrongList(g)}
+      ${isHost() && !(me && me.isTurn) ? `<div class="actions"><button class="btn" ${gameAct('pass')}>${esc(turnName)}님 차례 넘기기</button><button class="btn ghost" ${gameAct('end')}>여기서 끝내기</button></div>` : ''}`;
   }
 
   render();

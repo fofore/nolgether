@@ -352,6 +352,41 @@ async function main() {
     assert.equal(wf.game.summary.score, 50, 'unanswered questions are not counted');
     console.log('✓ 우리 얼마나 알까: 주인공 차례 돌기, 주인공 답 대기, 궁합 점수');
 
+    // ---------------- 나는 누구게?
+    await again.call('game:end');
+    await again.call('lobby:select', { gameKey: 'whoami' });
+    await again.call('lobby:settings', { settings: { turnSeconds: 0, penalty: 'skip' } });
+    assert.ok((await again.call('game:start')).ok, 'whoami start');
+    const wa = await again.until(phase('play'), 'wa play');
+    const cardOf = (viewer, owner) => viewer.state.game.cards.find(c => c.id === id(owner));
+    assert.equal(cardOf(again, again).word, null, 'own word hidden');
+    assert.ok(cardOf(again, mate).word, "partner's word visible");
+
+    const first = wa.game.current === id(again) ? again : mate;
+    const second = first === again ? mate : again;
+    const notMyTurn = await second.call('game:action', { type: 'guess', text: '아무거나' });
+    assert.ok(!notMyTurn.ok, 'cannot guess on someone else\'s turn');
+
+    await first.call('game:action', { type: 'pass' });
+    await again.until(s => s.game.current === id(second), 'turn passed');
+    await second.call('game:action', { type: 'pass' });
+    await again.until(s => s.game.current === id(first), 'turn back');
+
+    const wrong = await first.call('game:action', { type: 'guess', text: '절대정답아님' });
+    assert.equal(wrong.verdict, 'wrong');
+    await again.until(s => s.game.current === id(second), 'turn after wrong');
+
+    // second의 단어는 first 화면에 보인다. 띄어쓰기를 넣어도 정답 처리
+    const answer = cardOf(first, second).word;
+    const right = await second.call('game:action', { type: 'guess', text: ` ${answer} ` });
+    assert.equal(right.verdict, 'correct');
+    assert.equal(right.rank, 1);
+    const waf = await again.until(phase('final'), 'wa final');
+    assert.equal(waf.game.loser, id(first), 'last one left loses');
+    assert.ok(waf.game.cards.every(c => c.word), 'all words revealed at the end');
+    assert.ok(waf.game.titles.some(t => t.title === '헛다리 장인' && t.ids.includes(id(first))));
+    console.log('✓ 나는 누구게?: 내 단어 숨김, 차례 넘기기, 틀리면 다음 사람, 정답 탈출, 마지막 사람 벌칙');
+
     again.socket.close();
 
     console.log('\n모든 테스트 통과');

@@ -12,6 +12,7 @@ const QRCode = require('qrcode');
 const GAMES = {
   chosung: require('./games/chosung'),
   liar: require('./games/liar'),
+  whoami: require('./games/whoami'),
   balance: require('./games/balance'),
   telepathy: require('./games/telepathy'),
   weknow: require('./games/weknow'),
