@@ -333,6 +333,9 @@ input:focus { border-color: var(--primary); }
 .line .quote { font-weight: 700; }
 .line .btn { margin-left: auto; }
 .plus { color: var(--good); font-weight: 800; font-size: 14px; }
+.recap-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); word-break: keep-all; }
+.recap-row:last-of-type { border-bottom: 0; }
+.recap-row > :last-child { white-space: nowrap; font-size: 14px; }
 .rank-no { font-size: 12px; color: var(--primary); }
 
 /* ---------- 초성 배틀 */

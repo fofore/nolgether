@@ -6,7 +6,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/flow.test.js"
+    "test": "node test/flow.test.js",
+    "brand": "node scripts/render-brand.js"
   },
   "engines": {
     "node": ">=20"

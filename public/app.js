@@ -919,7 +919,7 @@
       const recap = `
         <section class="card">
           <div class="label">질문별 결과</div>
-          ${g.history.map(r => `<div class="line"><span>${r.same ? '💞' : '↔️'}</span><span>${esc(r.a)} vs ${esc(r.b)}</span><span class="${r.same ? 'plus' : 'muted'}" style="margin-left:auto">${r.same ? '통함' : '엇갈림'}</span></div>`).join('')}
+          ${g.history.map(r => `<div class="recap-row"><span>${r.same ? '💞' : '↔️'}</span><span>${esc(r.a)} vs ${esc(r.b)}</span><span class="${r.same ? 'plus' : 'muted'}">${r.same ? '통함' : '엇갈림'}</span></div>`).join('')}
         </section>`;
       return finalBlock(g, '텔레파시 한 번 더', scoreCard('텔레파시 지수', s.percent, s.label, `${s.total}문제 중 ${s.matches}번 통했어요`) + recap);
     }
